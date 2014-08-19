@@ -1,0 +1,536 @@
+---
+<%
+director_uuid = '01cddcd6-4c42-4b78-80ac-fce9cbe16bc2'
+deployment_name = 'cf'
+protocol = 'http'
+cf_release = 'paas'
+cf_release_version = '1.4-dev'
+ip_address = '10.175.102.96'
+common_password = 'c1oudc0w'
+root_domain = '10.175.102.96.xip.io'
+%>
+name: <%= deployment_name %>
+director_uuid: <%= director_uuid %>
+releases:
+ - name: <%= cf_release %>
+   version: <%= cf_release_version %>
+ 
+compilation:
+  workers: 6
+  network: default
+  reuse_compilation_vms: true
+  cloud_properties:
+    instance_type: m1.medium
+ 
+update:
+  canaries: 1
+  canary_watch_time: 30000-900000
+  update_watch_time: 30000-900000
+  max_in_flight: 6
+ 
+networks:
+  - name: floating
+    type: vip
+    cloud_properties: {}
+  - name: default
+    type: dynamic
+    cloud_properties:
+      net_id: 8b8acc3f-67dd-41e9-97ce-9cd425b885e4 
+      security_groups:
+        - default
+ 
+resource_pools:
+  - name: small
+    network: default
+    size: 0
+    stemcell:
+      name: bosh-openstack-kvm-ubuntu-trusty-go_agent
+      version: latest
+    cloud_properties:
+      instance_type: m1.small
+
+  - name: cf.router
+    network: default
+    size: 2
+    stemcell:
+      name: bosh-openstack-kvm-ubuntu-trusty-go_agent
+      version: latest
+    cloud_properties:
+      instance_type: cf.router
+
+  - name: cf.normal
+    network: default
+    size: 18
+    stemcell:
+      name: bosh-openstack-kvm-ubuntu-trusty-go_agent
+      version: latest
+    cloud_properties:
+      instance_type: cf.normal
+
+  - name: cf.store
+    network: default
+    size: 4
+    stemcell:
+      name: bosh-openstack-kvm-ubuntu-trusty-go_agent
+      version: latest
+    cloud_properties:
+      instance_type: cf.store
+
+  - name: medium
+    network: default
+    size: 0
+    stemcell:
+      name: bosh-openstack-kvm-ubuntu-trusty-go_agent
+      version: latest
+    cloud_properties:
+      instance_type: m1.medium
+
+  - name: cf.dea.new
+    network: default
+    size: 8
+    stemcell:
+      name: bosh-openstack-kvm-ubuntu-trusty-go_agent
+      version: latest
+    cloud_properties:
+      instance_type: cf.dea.new
+
+jobs:
+  - name: nats
+    templates:
+      - name: nats
+      - name: nats_stream_forwarder
+    instances: 2
+    resource_pool: cf.normal
+    networks:
+      - name: default
+        default: [dns, gateway]
+ 
+  - name: syslog_aggregator
+    templates:
+      - name: syslog_aggregator
+    instances: 1
+    resource_pool: cf.normal
+    persistent_disk: 16384
+    networks:
+      - name: default
+        default: [dns, gateway]
+ 
+  - name: collector
+    templates:
+      - name: collector
+    instances: 1
+    resource_pool: cf.normal
+    networks:
+      - name: default
+        default: [dns, gateway]
+ 
+  - name: postgres
+    templates:
+      - name: postgres
+    instances: 1
+    resource_pool: cf.store
+    persistent_disk: 16384
+    networks:
+      - name: default
+        default: [dns, gateway]
+    properties:
+      db: databases
+ 
+  - name: nfs_server
+    templates:
+      - name: debian_nfs_server
+    instances: 1
+    resource_pool: cf.store
+    persistent_disk: 81920
+    networks:
+      - name: default
+        default: [dns, gateway]
+ 
+  - name: uaa
+    templates:
+      - name: uaa
+    instances: 2
+    resource_pool: cf.normal
+    networks:
+      - name: default
+        default: [dns, gateway]
+ 
+  - name: loggregator
+    templates:
+      - name: loggregator
+    instances: 2
+    resource_pool: cf.normal
+    networks:
+      - name: default
+        default: [dns, gateway]
+ 
+  - name: trafficcontroller
+    templates:
+      - name: loggregator_trafficcontroller
+    instances: 2
+    resource_pool: cf.normal
+    networks:
+      - name: default
+        default: [dns, gateway]
+ 
+  - name: cloud_controller
+    templates:
+      - name: cloud_controller_ng
+    instances: 2
+    resource_pool: cf.normal
+    networks:
+      - name: default
+        default: [dns, gateway]
+    properties:
+      ccdb: ccdb
+
+  - name: cloud_controller_worker
+    templates:
+      - name: cloud_controller_worker
+    instances: 2
+    resource_pool: cf.normal
+    networks:
+      - name: default
+        default: [dns, gateway]
+    properties:
+      ccdb: ccdb
+
+  - name: cloud_controller_clock
+    templates:
+      - name: cloud_controller_clock
+    instances: 1
+    resource_pool: cf.normal
+    networks:
+      - name: default
+        default: [dns, gateway]
+    properties:
+      ccdb: ccdb
+ 
+  - name: etcd
+    templates:
+      - name: etcd
+    instances: 2
+    resource_pool: cf.store
+    persistent_disk: 8192
+    networks:
+      - name: default
+        default: [dns, gateway]
+
+  - name: hm9000
+    templates:
+      - name: hm9000
+    instances: 2
+    resource_pool: cf.normal
+    networks:
+      - name: default
+        default: [dns, gateway]
+
+  - name: dea
+    templates:
+      - name: dea_logging_agent
+      - name: dea_next
+    instances: 8
+    resource_pool: cf.dea.new
+    networks:
+      - name: default
+        default: [dns, gateway]
+
+  - name: router
+    templates:
+      - name: gorouter
+    instances: 2
+    resource_pool: cf.router
+    networks:
+      - name: default
+        default: [dns, gateway]
+
+  - name: haproxy
+    templates:
+      - name: haproxy
+    instances: 1
+    resource_pool: cf.normal
+    networks:
+      - name: default
+        default: [dns, gateway]
+      - name: floating
+        static_ips:
+          - <%= ip_address %>
+
+properties:
+  domain: <%= root_domain %>
+  system_domain: <%= root_domain %>
+  system_domain_organization: 'admin'
+  app_domains:
+    - <%= root_domain %>
+
+  haproxy: {}
+  
+  networks:
+    apps: default
+    management: default
+
+  etcd_ips:
+    - 0.etcd.default.<%= deployment_name %>.bosh
+    - 1.etcd.default.<%= deployment_name %>.bosh  
+
+  nats:
+    user: nats
+    password: <%= common_password %>
+    address: 0.nats.default.<%= deployment_name %>.bosh
+    port: 4222
+    machines:
+      - 0.nats.default.<%= deployment_name %>.bosh
+      - 1.nats.default.<%= deployment_name %>.bosh
+    use_gnatsd: true
+
+  etcd_metrics_server:
+    nats:
+      machines: (( .properties.nats.machines ))
+      username: (( .properties.nats.user ))
+      password: (( .properties.nats.password ))
+
+  router:
+    endpoint_timeout: 60
+    status:
+      port: 8080
+      user: gorouter
+      password: <%= common_password %>
+    servers:
+      z1:
+        - 0.router.default.<%= deployment_name %>.bosh
+        - 1.router.default.<%= deployment_name %>.bosh
+      z2: []
+
+  etcd:
+    machines:
+      - 0.etcd.default.<%= deployment_name %>.bosh
+      - 1.etcd.default.<%= deployment_name %>.bosh
+
+  dea: &dea
+    memory_mb: 10240 #4096
+    memory_overcommit_factor: 3 #8
+    disk_mb: 4096
+    disk_overcommit_factor: 30
+    directory_server_protocol: <%= protocol %>
+
+  dea_next: *dea
+
+  syslog_aggregator:
+    address: 0.syslog-aggregator.default.<%= deployment_name %>.bosh
+    port: 54321
+
+  nfs_server:
+    address: 0.nfs-server.default.<%= deployment_name %>.bosh
+    network: "*.<%= deployment_name %>.bosh"
+    idmapd_domain: openstacklocal
+
+  debian_nfs_server:
+    no_root_squash: true
+
+  logger_endpoint:
+    use_ssl: false
+    port: 80
+
+  loggregator_endpoint:
+    shared_secret: <%= common_password %>
+    host: 0.trafficcontroller.default.<%= deployment_name %>.bosh
+
+  loggregator:
+    servers:
+      zone:
+        -  0.loggregator.default.<%= deployment_name %>.bosh
+        -  1.loggregator.default.<%= deployment_name %>.bosh
+
+  traffic_controller:
+    zone: 'zone'
+
+  ssl:
+    skip_cert_verify: true
+
+  databases: &databases
+    db_scheme: postgres
+    address: 0.postgres.default.<%= deployment_name %>.bosh
+    port: 5524
+    roles:
+      - tag: admin
+        name: ccadmin
+        password: <%= common_password %>
+      - tag: admin
+        name: uaaadmin
+        password: <%= common_password %>
+    databases:
+      - tag: cc
+        name: ccdb
+        citext: true
+      - tag: uaa
+        name: uaadb
+        citext: true
+
+  ccdb: &ccdb
+    db_scheme: postgres
+    address: 0.postgres.default.<%= deployment_name %>.bosh
+    port: 5524
+    roles:
+      - tag: admin
+        name: ccadmin
+        password: <%= common_password %>
+    databases:
+      - tag: cc
+        name: ccdb
+        citext: true
+
+  ccdb_ng: *ccdb
+
+  uaadb:
+    db_scheme: postgresql
+    address: 0.postgres.default.<%= deployment_name %>.bosh
+    port: 5524
+    roles:
+      - tag: admin
+        name: uaaadmin
+        password: <%= common_password %>
+    databases:
+      - tag: uaa
+        name: uaadb
+        citext: true
+
+  cc_api_version: v2
+
+  cc: &cc
+    logging_level: debug
+    external_host: api
+    srv_api_uri: <%= protocol %>://api.<%= root_domain %>
+    cc_partition: default
+    db_encryption_key: <%= common_password %>
+    bootstrap_admin_email: 'admin@example.com'
+    bulk_api_password: <%= common_password %>
+    uaa_resource_id: cloud_controller
+    staging_upload_user: upload
+    staging_upload_password: <%= common_password %>
+    install_buildpacks:
+      - name: java_buildpack
+        package: buildpack_java_offline
+      - name: ruby_buildpack
+        package: buildpack_ruby
+      - name: nodejs_buildpack
+        package: buildpack_nodejs
+      - name: go_buildpack
+        package: buildpack_go
+      - name: java_source_buildpack
+        package: buildpack_java_source
+      - name: python_buildpack
+        package: buildpack_python
+      - name: c_buildpack
+        package: buildpack_c
+      - name: binary_buildpack
+        package: buildpack_binary
+      - name: java_jetty_buildpack
+        package: buildpack_java_jetty
+      - name: java_websphere_buildpack
+        package: buildpack_java_websphere
+
+    resource_pool:
+      resource_directory_key: cloudfoundry-resources
+      fog_connection:
+        provider: OpenStack
+        openstack_username: swift
+        openstack_api_key: tsj
+        openstack_auth_url: http://10.175.102.79:5000/v2.0/tokens
+        openstack_temp_url_key: tsj
+    packages:
+      app_package_directory_key: cloudfoundry-packages
+      fog_connection:
+        provider: OpenStack
+        openstack_username: swift
+        openstack_api_key: tsj
+        openstack_auth_url: http://10.175.102.79:5000/v2.0/tokens
+        openstack_temp_url_key: tsj
+    droplets:
+      droplet_directory_key: cloudfoundry-droplets
+      fog_connection:
+        provider: OpenStack
+        openstack_username: swift
+        openstack_api_key: tsj
+        openstack_auth_url: http://10.175.102.79:5000/v2.0/tokens
+        openstack_temp_url_key: tsj
+    buildpacks:
+      buildpack_directory_key: cloudfoundry-buildpacks
+      fog_connection:
+        provider: OpenStack
+        openstack_username: swift
+        openstack_api_key: tsj
+        openstack_auth_url: http://10.175.102.79:5000/v2.0/tokens
+        openstack_temp_url_key: tsj
+    quota_definitions:
+      default:
+        memory_limit: 10240
+        total_services: 100
+        non_basic_services_allowed: true
+        total_routes: 1000
+        trial_db_allowed: true
+
+  ccng: *cc
+
+  login:
+    enabled: false
+
+  uaa:
+    url: <%= protocol %>://uaa.<%= root_domain %>
+    no_ssl: <%= protocol == 'http' %>
+    catalina_opts: -Xmx768m -XX:MaxPermSize=256m
+    resource_id: account_manager
+    jwt:
+      signing_key: |
+        -----BEGIN RSA PRIVATE KEY-----
+        MIICXAIBAAKBgQDHFr+KICms+tuT1OXJwhCUmR2dKVy7psa8xzElSyzqx7oJyfJ1
+        JZyOzToj9T5SfTIq396agbHJWVfYphNahvZ/7uMXqHxf+ZH9BL1gk9Y6kCnbM5R6
+        0gfwjyW1/dQPjOzn9N394zd2FJoFHwdq9Qs0wBugspULZVNRxq7veq/fzwIDAQAB
+        AoGBAJ8dRTQFhIllbHx4GLbpTQsWXJ6w4hZvskJKCLM/o8R4n+0W45pQ1xEiYKdA
+        Z/DRcnjltylRImBD8XuLL8iYOQSZXNMb1h3g5/UGbUXLmCgQLOUUlnYt34QOQm+0
+        KvUqfMSFBbKMsYBAoQmNdTHBaz3dZa8ON9hh/f5TT8u0OWNRAkEA5opzsIXv+52J
+        duc1VGyX3SwlxiE2dStW8wZqGiuLH142n6MKnkLU4ctNLiclw6BZePXFZYIK+AkE
+        xQ+k16je5QJBAN0TIKMPWIbbHVr5rkdUqOyezlFFWYOwnMmw/BKa1d3zp54VP/P8
+        +5aQ2d4sMoKEOfdWH7UqMe3FszfYFvSu5KMCQFMYeFaaEEP7Jn8rGzfQ5HQd44ek
+        lQJqmq6CE2BXbY/i34FuvPcKU70HEEygY6Y9d8J3o6zQ0K9SYNu+pcXt4lkCQA3h
+        jJQQe5uEGJTExqed7jllQ0khFJzLMx0K6tj0NeeIzAaGCQz13oo2sCdeGRHO4aDh
+        HH6Qlq/6UOV5wP8+GAcCQFgRCcB+hrje8hfEEefHcFpyKH+5g1Eu1k0mLrxK2zd+
+        4SlotYRHgPCEubokb2S1zfZDWIXW3HmggnGgM949TlY=
+        -----END RSA PRIVATE KEY-----
+      verification_key: |
+        -----BEGIN PUBLIC KEY-----
+        MIGfMA0GCSqGSIb3DQEBAQUAA4GNADCBiQKBgQDHFr+KICms+tuT1OXJwhCUmR2d
+        KVy7psa8xzElSyzqx7oJyfJ1JZyOzToj9T5SfTIq396agbHJWVfYphNahvZ/7uMX
+        qHxf+ZH9BL1gk9Y6kCnbM5R60gfwjyW1/dQPjOzn9N394zd2FJoFHwdq9Qs0wBug
+        spULZVNRxq7veq/fzwIDAQAB
+        -----END PUBLIC KEY-----
+    cc:
+      client_secret: <%= common_password %>
+    admin:
+      client_secret: <%= common_password %>
+    batch:
+      username: batch
+      password: <%= common_password %>
+    login:
+      addnew: false
+      client_secret: ~
+    client:
+      autoapprove:
+        - cf
+    clients:
+      cf:
+        override: true
+        authorized-grant-types: password,implicit,refresh_token
+        authorities: uaa.none
+        scope: cloud_controller.read,cloud_controller.write,openid,password.write,cloud_controller.admin,scim.read,scim.write
+        access-token-validity: 7200
+        refresh-token-validity: 1209600
+      admin:
+        secret: <%= common_password %>
+        authorized-grant-types: client_credentials
+        authorities: clients.read,clients.write,clients.secret,password.write,scim.read,uaa.admin
+    scim:
+      userids_enabled: true
+      users:
+      - admin|<%= common_password %>|scim.write,scim.read,openid,cloud_controller.admin,uaa.admin,password.write
+      - services|<%= common_password %>|scim.write,scim.read,openid,cloud_controller.admin
+
